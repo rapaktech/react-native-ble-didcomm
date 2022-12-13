@@ -1,25 +1,37 @@
-/* eslint-disable react-native/no-inline-styles */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable no-console */
+import type { Agent, OutboundPackage } from '@aries-framework/core'
+
+import { utils, HandshakeProtocol } from '@aries-framework/core'
+import { MessageReceiver } from '@aries-framework/core/build/agent/MessageReceiver'
+import { JsonEncoder } from '@aries-framework/core/build/utils'
 import * as React from 'react'
+import { StyleSheet, View, Text, Button, PermissionsAndroid, Platform } from 'react-native'
+
 import {
-  StyleSheet,
-  View,
-  Text,
-  Button,
-  PermissionsAndroid,
-  Platform,
-} from 'react-native'
-import {
-  Central,
-  Peripheral,
   DEFAULT_DIDCOMM_SERVICE_UUID,
   DEFAULT_DIDCOMM_MESSAGE_CHARACTERISTIC_UUID,
   DEFAULT_DIDCOMM_INDICATE_CHARACTERISTIC_UUID,
-} from '@animo-id/react-native-ble-didcomm'
+  Central,
+  Peripheral,
+} from '../../build'
+
+import { setupAgent } from '../../../aries-framework-javascript-ext/packages/ble-transport/src/index'
+
 import { presentationMsg } from './presentationMsg'
 
 const Spacer = () => <View style={{ height: 20, width: 20 }} />
 
 const msg = JSON.stringify(presentationMsg)
+
+const message: OutboundPackage = {
+  payload: {
+    protected: 'ble',
+    iv: 'ble',
+    ciphertext: 'ble',
+    tag: 'ble',
+  },
+}
 
 const requestPermissions = async () => {
   await PermissionsAndroid.requestMultiple([
@@ -31,13 +43,61 @@ const requestPermissions = async () => {
   ])
 }
 
+const agentA = await (async () =>
+  await setupAgent({
+    publicDidSeed: 'testtesttesttesttesttesttesttest',
+    name: 'Aries Test Agent',
+  }))()
+
+const agentB = await (async () =>
+  await setupAgent({
+    publicDidSeed: '65748374657483920193747564738290',
+    name: 'aries push notifications agent',
+  }))()
+
+async function makeConnection(agentA: Agent, agentB: Agent) {
+  const agentAOutOfBand = await agentA.oob.createInvitation({
+    handshakeProtocols: [HandshakeProtocol.Connections],
+  })
+
+  let { connectionRecord: agentBConnection } = await agentB.oob.receiveInvitation(agentAOutOfBand.outOfBandInvitation)
+
+  agentBConnection = await agentB.connections.returnWhenIsConnected(agentBConnection!.id)
+  let [agentAConnection] = await agentA.connections.findAllByOutOfBandId(agentAOutOfBand.id)
+  agentAConnection = await agentA.connections.returnWhenIsConnected(agentAConnection!.id)
+
+  return [agentAConnection, agentBConnection]
+}
+
+const [agentAConnection, agentBConnection] = await (async () => await makeConnection(agentA, agentB))()
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  box: {
+    width: 60,
+    height: 60,
+    marginVertical: 20,
+  },
+})
+
 export default function App() {
   const [isCentral, setIsCentral] = React.useState(false)
   const [isPeripheral, setIsPeripheral] = React.useState(false)
   const [peripheralId, setPeripheralId] = React.useState<string>()
   const [connected, setConnected] = React.useState(false)
+
   const central = new Central()
   const peripheral = new Peripheral()
+
+  agentA.outboundTransports[0].start(agentA)
+
+  agentA.outboundTransports[0].sendMessage(message)
+
+  agentB.inboundTransports[0].start(agentB)
 
   React.useEffect(() => {
     const onDiscoverPeripheralListener = central.registerOnDiscoveredListener(
@@ -54,13 +114,13 @@ export default function App() {
       }
     )
 
-    const onReceivedNotificationListener = central.registerMessageListener(
-      console.log
-    )
+    const onReceivedNotificationListener = central.registerMessageListener(console.log)
 
-    const onReceivedWriteWithoutResponseListener = peripheral.registerMessageListener(
-      console.log
-    )
+    agentA.events.on(`ConnectionStateChanged` || `BasicMessageStateChanged`, (event: any) => console.log(event))
+
+    const onReceivedWriteWithoutResponseListener = peripheral.registerMessageListener(console.log)
+
+    agentB.events.on(`ConnectionStateChanged` || `BasicMessageStateChanged`, (event: any) => console.log(event))
 
     return () => {
       onDiscoverPeripheralListener.remove()
@@ -93,6 +153,7 @@ export default function App() {
             messagingUUID: DEFAULT_DIDCOMM_MESSAGE_CHARACTERISTIC_UUID,
             indicationUUID: DEFAULT_DIDCOMM_INDICATE_CHARACTERISTIC_UUID,
           })
+          await agentA.outboundTransports[0].start(agentA)
           setIsCentral(true)
         }}
       />
@@ -104,6 +165,7 @@ export default function App() {
             messagingUUID: DEFAULT_DIDCOMM_MESSAGE_CHARACTERISTIC_UUID,
             indicationUUID: DEFAULT_DIDCOMM_INDICATE_CHARACTERISTIC_UUID,
           })
+          await agentB.inboundTransports[0].start(agentB)
           setIsPeripheral(true)
         }}
       />
@@ -118,36 +180,33 @@ export default function App() {
           {peripheralId && (
             <Button
               title="connect"
-              onPress={async () => await central.connect(peripheralId)}
+              onPress={async () => {
+                await central.connect(peripheralId)
+              }}
             />
           )}
           {connected && (
-            <Button
-              title="write"
-              onPress={async () => await central.sendMessage(msg)}
-            />
+            <Button title="write" onPress={async () => await agentA.outboundTransports[0].sendMessage(message)} />
           )}
         </>
       )}
       {isPeripheral && (
         <>
           <Button title="advertise" onPress={() => peripheral.advertise()} />
-          <Button title="notify" onPress={() => peripheral.sendMessage(msg)} />
+          {/* <Button
+            title="notify"
+            onPress={async () => {
+              const messageReceiver = agentB.injectionContainer.resolve(MessageReceiver)
+
+              const encryptedMessage = JsonEncoder.fromString(msg)
+
+              await messageReceiver.receiveMessage(encryptedMessage, {
+                session: new BleTransportSession(utils.uuid(), peripheral),
+              })
+            }}
+          /> */}
         </>
       )}
     </View>
   )
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  box: {
-    width: 60,
-    height: 60,
-    marginVertical: 20,
-  },
-})
