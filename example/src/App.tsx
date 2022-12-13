@@ -1,24 +1,30 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 /* eslint-disable no-console */
-import type { Agent, OutboundPackage } from '@aries-framework/core'
+import { Agent, OutboundPackage } from '@aries-framework/core'
 
 import { utils, HandshakeProtocol } from '@aries-framework/core'
-import { MessageReceiver } from '@aries-framework/core/build/agent/MessageReceiver'
-import { JsonEncoder } from '@aries-framework/core/build/utils'
+// import { MessageReceiver } from '@aries-framework/core/build/agent/MessageReceiver'
+// import { JsonEncoder } from '@aries-framework/core/build/utils'
 import * as React from 'react'
-import { StyleSheet, View, Text, Button, PermissionsAndroid, Platform } from 'react-native'
+import {
+  StyleSheet,
+  View,
+  Text,
+  Button,
+  PermissionsAndroid,
+  Platform,
+} from 'react-native'
 
 import {
   DEFAULT_DIDCOMM_SERVICE_UUID,
   DEFAULT_DIDCOMM_MESSAGE_CHARACTERISTIC_UUID,
   DEFAULT_DIDCOMM_INDICATE_CHARACTERISTIC_UUID,
-  Central,
-  Peripheral,
-} from '../../build'
-
-import { setupAgent } from '../../../aries-framework-javascript-ext/packages/ble-transport/src/index'
+} from '../../src/constants'
 
 import { presentationMsg } from './presentationMsg'
+import { setupAgent } from '../../packages/rest/src/utils/agent'
+import { Central } from '../../src/central'
+import { Peripheral } from '../../src/peripheral'
 
 const Spacer = () => <View style={{ height: 20, width: 20 }} />
 
@@ -43,33 +49,50 @@ const requestPermissions = async () => {
   ])
 }
 
-const agentA = await (async () =>
-  await setupAgent({
-    publicDidSeed: 'testtesttesttesttesttesttesttest',
-    name: 'Aries Test Agent',
-  }))()
+const agentA = await(
+  async () =>
+    await setupAgent({
+      publicDidSeed: 'testtesttesttesttesttesttesttest',
+      name: 'Aries Test Agent',
+      port: 3001,
+      endpoints: [],
+    })
+)()
 
-const agentB = await (async () =>
-  await setupAgent({
-    publicDidSeed: '65748374657483920193747564738290',
-    name: 'aries push notifications agent',
-  }))()
+const agentB = await(
+  async () =>
+    await setupAgent({
+      publicDidSeed: '65748374657483920193747564738290',
+      name: 'aries push notifications agent',
+      port: 3001,
+      endpoints: [],
+    })
+)()
 
 async function makeConnection(agentA: Agent, agentB: Agent) {
   const agentAOutOfBand = await agentA.oob.createInvitation({
     handshakeProtocols: [HandshakeProtocol.Connections],
   })
 
-  let { connectionRecord: agentBConnection } = await agentB.oob.receiveInvitation(agentAOutOfBand.outOfBandInvitation)
+  let { connectionRecord: agentBConnection } =
+    await agentB.oob.receiveInvitation(agentAOutOfBand.outOfBandInvitation)
 
-  agentBConnection = await agentB.connections.returnWhenIsConnected(agentBConnection!.id)
-  let [agentAConnection] = await agentA.connections.findAllByOutOfBandId(agentAOutOfBand.id)
-  agentAConnection = await agentA.connections.returnWhenIsConnected(agentAConnection!.id)
+  agentBConnection = await agentB.connections.returnWhenIsConnected(
+    agentBConnection!.id
+  )
+  let [agentAConnection] = await agentA.connections.findAllByOutOfBandId(
+    agentAOutOfBand.id
+  )
+  agentAConnection = await agentA.connections.returnWhenIsConnected(
+    agentAConnection!.id
+  )
 
   return [agentAConnection, agentBConnection]
 }
 
-const [agentAConnection, agentBConnection] = await (async () => await makeConnection(agentA, agentB))()
+const [agentAConnection, agentBConnection] = await(
+  async () => await makeConnection(agentB, agentA)
+)()
 
 const styles = StyleSheet.create({
   container: {
@@ -114,13 +137,22 @@ export default function App() {
       }
     )
 
-    const onReceivedNotificationListener = central.registerMessageListener(console.log)
+    const onReceivedNotificationListener = central.registerMessageListener(
+      console.log
+    )
 
-    agentA.events.on(`ConnectionStateChanged` || `BasicMessageStateChanged`, (event: any) => console.log(event))
+    agentA.events.on(
+      `ConnectionStateChanged` || `BasicMessageStateChanged`,
+      (event: any) => console.log(event)
+    )
 
-    const onReceivedWriteWithoutResponseListener = peripheral.registerMessageListener(console.log)
+    const onReceivedWriteWithoutResponseListener =
+      peripheral.registerMessageListener(console.log)
 
-    agentB.events.on(`ConnectionStateChanged` || `BasicMessageStateChanged`, (event: any) => console.log(event))
+    agentB.events.on(
+      `ConnectionStateChanged` || `BasicMessageStateChanged`,
+      (event: any) => console.log(event)
+    )
 
     return () => {
       onDiscoverPeripheralListener.remove()
@@ -186,7 +218,12 @@ export default function App() {
             />
           )}
           {connected && (
-            <Button title="write" onPress={async () => await agentA.outboundTransports[0].sendMessage(message)} />
+            <Button
+              title="write"
+              onPress={async () =>
+                await agentA.outboundTransports[0].sendMessage(message)
+              }
+            />
           )}
         </>
       )}

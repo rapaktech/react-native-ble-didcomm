@@ -41,6 +41,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
+    "@aries-framework/core": "^0.2.5",
     "convert-string": "0.1.0"
   },
   "peerDependencies": {
